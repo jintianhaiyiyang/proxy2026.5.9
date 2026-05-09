@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vercel 高级边缘节点代理</title>
+    <style>
+        :root {
+            --bg-base: #0f172a;
+            --glass-bg: rgba(30, 41, 59, 0.45);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+            --danger: #ef4444;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-base);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* 极光背景动画 */
+        .aurora {
+            position: absolute;
+            width: 200vw;
+            height: 200vh;
+            top: -50%;
+            left: -50%;
+            background: conic-gradient(from 0deg at 50% 50%, #0f172a 0%, #1e1b4b 25%, #0f172a 50%, #064e3b 75%, #0f172a 100%);
+            animation: rotate 20s linear infinite;
+            opacity: 0.6;
+            z-index: 0;
+            filter: blur(80px);
+        }
+
+        @keyframes rotate {
+            100% { transform: rotate(360deg); }
+        }
+
+        .container {
+            position: relative;
+            z-index: 10;
+            width: 90%;
+            max-width: 680px;
+            background: var(--glass-bg);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            padding: 48px;
+            box-shadow: 0 30px 60px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1);
+            transition: transform 0.3s ease;
+        }
+
+        .header { text-align: center; margin-bottom: 40px; }
+        .header h1 { font-size: 2.5rem; font-weight: 700; margin-bottom: 12px; background: linear-gradient(to right, #60a5fa, #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .header p { color: var(--text-muted); font-size: 1.1rem; }
+
+        .input-wrapper {
+            position: relative;
+            display: flex;
+            gap: 12px;
+            margin-bottom: 30px;
+        }
+
+        input {
+            flex: 1;
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--glass-border);
+            border-radius: 14px;
+            padding: 18px 24px;
+            font-size: 1.1rem;
+            color: #fff;
+            transition: all 0.3s;
+        }
+
+        input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.2); }
+        input::placeholder { color: #64748b; }
+
+        button.primary {
+            background: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 14px;
+            padding: 0 32px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        button.primary:hover { background: var(--accent-hover); transform: translateY(-2px); box-shadow: 0 10px 20px rgba(37, 99, 235, 0.3); }
+
+        /* 历史记录模块 */
+        .history-panel { margin-top: 30px; }
+        .history-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--glass-border); padding-bottom: 8px; }
+        .history-header h3 { font-size: 1rem; color: var(--text-muted); font-weight: 500; }
+        .clear-btn { background: transparent; border: none; color: var(--danger); cursor: pointer; font-size: 0.9rem; opacity: 0.8; transition: opacity 0.2s; }
+        .clear-btn:hover { opacity: 1; }
+
+        .history-list { list-style: none; display: flex; flex-direction: column; gap: 8px; max-height: 200px; overflow-y: auto; padding-right: 8px; }
+        .history-list::-webkit-scrollbar { width: 6px; }
+        .history-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 3px; }
+        
+        .history-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(255,255,255,0.03);
+            padding: 12px 16px;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: background 0.2s;
+            border: 1px solid transparent;
+        }
+        .history-item:hover { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.1); }
+        .history-url { font-size: 0.95rem; color: #cbd5e1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 80%; }
+        .history-time { font-size: 0.8rem; color: #64748b; }
+
+        /* Toast 通知 */
+        .toast-container { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 100; display: flex; flex-direction: column; gap: 10px; }
+        .toast { background: rgba(15, 23, 42, 0.9); border: 1px solid var(--glass-border); color: white; padding: 12px 24px; border-radius: 30px; font-size: 0.95rem; backdrop-filter: blur(10px); animation: slideUp 0.3s ease forwards; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+
+        @media (max-width: 600px) {
+            .input-wrapper { flex-direction: column; }
+            button.primary { padding: 18px; }
+            .container { padding: 30px 20px; width: 95%; }
+        }
+    </style>
+</head>
+<body>
+    <div class="aurora"></div>
+    <div class="container">
+        <div class="header">
+            <h1>Edge Proxy Engine</h1>
+            <p>输入目标 URL，自动映射高速加密传输链路</p>
+        </div>
+
+        <div class="input-wrapper">
+            <input type="text" id="targetUrl" placeholder="输入网址 (支持快捷键: yt, gg, gh)" autocomplete="off" spellcheck="false" />
+            <button class="primary" id="proxyBtn">启动加速</button>
+        </div>
+
+        <div class="history-panel">
+            <div class="history-header">
+                <h3>最近访问</h3>
+                <button class="clear-btn" id="clearHistoryBtn">清除记录</button>
+            </div>
+            <ul class="history-list" id="historyList">
+                <!-- 历史记录动态渲染 -->
+            </ul>
+        </div>
+    </div>
+    
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script>
+        const inputEl = document.getElementById('targetUrl');
+        const btnEl = document.getElementById('proxyBtn');
+        const historyListEl = document.getElementById('historyList');
+        const clearBtn = document.getElementById('clearHistoryBtn');
+        const toastContainer = document.getElementById('toastContainer');
+
+        // 快捷指令映射表
+        const shortcuts = {
+            'yt': 'https://www.youtube.com',
+            'gg': 'https://www.google.com',
+            'gh': 'https://github.com',
+            'tg': 'https://web.telegram.org'
+        };
+
+        // Toast 通知系统
+        const showToast = (message, duration = 3000) => {
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.textContent = message;
+            toastContainer.appendChild(toast);
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                setTimeout(() => toast.remove(), 300);
+            }, duration);
+        };
+
+        // 历史记录存储管理
+        const StorageManager = {
+            KEY: 'proxy_history_v1',
+            get() {
+                try { return JSON.parse(localStorage.getItem(this.KEY)) || []; } 
+                catch { return []; }
+            },
+            add(url) {
+                let records = this.get().filter(r => r.url !== url);
+                records.unshift({ url, timestamp: Date.now() });
+                if(records.length > 10) records = records.slice(0, 10);
+                localStorage.setItem(this.KEY, JSON.stringify(records));
+                renderHistory();
+            },
+            clear() {
+                localStorage.removeItem(this.KEY);
+                renderHistory();
+                showToast('历史记录已清除');
+            }
+        };
+
+        // 格式化时间
+        const timeAgo = (timestamp) => {
+            const seconds = Math.floor((Date.now() - timestamp) / 1000);
+            if (seconds < 60) return '刚刚';
+            if (seconds < 3600) return `${Math.floor(seconds/60)}分钟前`;
+            if (seconds < 86400) return `${Math.floor(seconds/3600)}小时前`;
+            return `${Math.floor(seconds/86400)}天前`;
+        };
+
+        // 渲染历史列表
+        const renderHistory = () => {
+            const records = StorageManager.get();
+            if (records.length === 0) {
+                historyListEl.innerHTML = '<li class="history-item"><span class="history-url" style="color:#475569;">暂无访问记录</span></li>';
+                return;
+            }
+            historyListEl.innerHTML = records.map(record => `
+                <li class="history-item" data-url="${record.url}">
+                    <span class="history-url">${record.url}</span>
+                    <span class="history-time">${timeAgo(record.timestamp)}</span>
+                </li>
+            `).join('');
+        };
+
+        // 智能路由处理核心
+        const executeProxy = (rawInput) => {
+            let target = rawInput.trim();
+            
+            // 处理快捷指令
+            if (shortcuts[target.toLowerCase()]) {
+                target = shortcuts[target.toLowerCase()];
+                showToast(`已展开快捷指令: ${target}`);
+            }
+
+            if (!target) return showToast('请求拦截：URL 不能为空');
+
+            // 智能协议补全
+            if (!/^https?:\/\//i.test(target)) {
+                target = 'https://' + target;
+            }
+
+            try {
+                const parsedUrl = new URL(target);
+                const protocol = parsedUrl.protocol.replace(':', ''); // 'https' or 'http'
+                const endpoint = parsedUrl.hostname + parsedUrl.pathname + parsedUrl.search + parsedUrl.hash;
+                
+                StorageManager.add(target);
+                const proxyUrl = `${window.location.origin}/${protocol}/${endpoint}`;
+                
+                showToast('正在构建加密隧道...');
+                setTimeout(() => { window.location.href = proxyUrl; }, 400);
+
+            } catch (e) {
+                showToast('URL 解析失败，请检查格式');
+            }
+        };
+
+        // 事件监听绑定
+        btnEl.addEventListener('click', () => executeProxy(inputEl.value));
+        
+        inputEl.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') executeProxy(inputEl.value);
+        });
+
+        historyListEl.addEventListener('click', (e) => {
+            const item = e.target.closest('.history-item');
+            if (item && item.dataset.url) {
+                inputEl.value = item.dataset.url;
+                executeProxy(item.dataset.url);
+            }
+        });
+
+        clearBtn.addEventListener('click', () => StorageManager.clear());
+
+        // 初始化
+        renderHistory();
+        inputEl.focus();
+    </script>
+</body>
+</html>
