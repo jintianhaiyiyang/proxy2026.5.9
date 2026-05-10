@@ -3,294 +3,525 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Vercel 高级边缘节点代理</title>
+    <title>Web 代理浏览器</title>
+    <!-- 引入 Tailwind CSS 用于快速美化 UI -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 Font Awesome 图标 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        :root {
-            --bg-base: #0f172a;
-            --glass-bg: rgba(30, 41, 59, 0.45);
-            --glass-border: rgba(255, 255, 255, 0.1);
-            --text-main: #f8fafc;
-            --text-muted: #94a3b8;
-            --accent: #3b82f6;
-            --accent-hover: #2563eb;
-            --danger: #ef4444;
-        }
-
-        * { box-sizing: border-box; margin: 0; padding: 0; }
+        /* 引入优雅的字体 */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: var(--bg-base);
-            color: var(--text-main);
-            min-height: 100vh;
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc; /* 浅色背景 */
+            color: #334155;
+            margin: 0;
+            padding: 0;
             display: flex;
-            align-items: center;
-            justify-content: center;
+            flex-direction: column;
+            height: 100vh;
             overflow: hidden;
+        }
+
+        /* 顶部导航栏样式 */
+        .navbar {
+            background-color: #ffffff;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            z-index: 10;
+            transition: all 0.3s ease;
+        }
+
+        /* 输入框容器样式，添加发光效果 */
+        .input-container {
             position: relative;
+            transition: all 0.3s ease;
+        }
+        
+        .input-container:focus-within {
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.5);
+            border-radius: 9999px;
         }
 
-        /* 极光背景动画 */
-        .aurora {
-            position: absolute;
-            width: 200vw;
-            height: 200vh;
-            top: -50%;
-            left: -50%;
-            background: conic-gradient(from 0deg at 50% 50%, #0f172a 0%, #1e1b4b 25%, #0f172a 50%, #064e3b 75%, #0f172a 100%);
-            animation: rotate 20s linear infinite;
-            opacity: 0.6;
-            z-index: 0;
-            filter: blur(80px);
+        /* iframe 容器样式，占据剩余空间 */
+        .proxy-container {
+            flex-grow: 1;
+            position: relative;
+            background-color: #f1f5f9;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
         }
 
-        @keyframes rotate {
+        /* iframe 样式，默认隐藏，加载完成后显示 */
+        #proxy-frame {
+            width: 100%;
+            height: 100%;
+            border: none;
+            display: none; /* 初始隐藏 */
+            background-color: white;
+        }
+
+        /* 加载动画样式 */
+        .loader {
+            border: 4px solid #e2e8f0;
+            border-top: 4px solid #3b82f6;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            display: none; /* 初始隐藏 */
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
 
-        .container {
-            position: relative;
-            z-index: 10;
-            width: 90%;
-            max-width: 680px;
-            background: var(--glass-bg);
-            backdrop-filter: blur(24px);
-            -webkit-backdrop-filter: blur(24px);
-            border: 1px solid var(--glass-border);
-            border-radius: 24px;
-            padding: 48px;
-            box-shadow: 0 30px 60px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1);
-            transition: transform 0.3s ease;
-        }
-
-        .header { text-align: center; margin-bottom: 40px; }
-        .header h1 { font-size: 2.5rem; font-weight: 700; margin-bottom: 12px; background: linear-gradient(to right, #60a5fa, #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-        .header p { color: var(--text-muted); font-size: 1.1rem; }
-
-        .input-wrapper {
-            position: relative;
+        /* 欢迎界面样式 */
+        .welcome-screen {
+            text-align: center;
             display: flex;
-            gap: 12px;
-            margin-bottom: 30px;
-        }
-
-        input {
-            flex: 1;
-            background: rgba(15, 23, 42, 0.6);
-            border: 1px solid var(--glass-border);
-            border-radius: 14px;
-            padding: 18px 24px;
-            font-size: 1.1rem;
-            color: #fff;
-            transition: all 0.3s;
-        }
-
-        input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.2); }
-        input::placeholder { color: #64748b; }
-
-        button.primary {
-            background: var(--accent);
-            color: white;
-            border: none;
-            border-radius: 14px;
-            padding: 0 32px;
-            font-size: 1.1rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        button.primary:hover { background: var(--accent-hover); transform: translateY(-2px); box-shadow: 0 10px 20px rgba(37, 99, 235, 0.3); }
-
-        /* 历史记录模块 */
-        .history-panel { margin-top: 30px; }
-        .history-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--glass-border); padding-bottom: 8px; }
-        .history-header h3 { font-size: 1rem; color: var(--text-muted); font-weight: 500; }
-        .clear-btn { background: transparent; border: none; color: var(--danger); cursor: pointer; font-size: 0.9rem; opacity: 0.8; transition: opacity 0.2s; }
-        .clear-btn:hover { opacity: 1; }
-
-        .history-list { list-style: none; display: flex; flex-direction: column; gap: 8px; max-height: 200px; overflow-y: auto; padding-right: 8px; }
-        .history-list::-webkit-scrollbar { width: 6px; }
-        .history-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 3px; }
-        
-        .history-item {
-            display: flex;
-            justify-content: space-between;
+            flex-direction: column;
             align-items: center;
-            background: rgba(255,255,255,0.03);
-            padding: 12px 16px;
-            border-radius: 10px;
-            cursor: pointer;
-            transition: background 0.2s;
-            border: 1px solid transparent;
+            justify-content: center;
+            padding: 2rem;
+            animation: fadeIn 0.5s ease-out;
         }
-        .history-item:hover { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.1); }
-        .history-url { font-size: 0.95rem; color: #cbd5e1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 80%; }
-        .history-time { font-size: 0.8rem; color: #64748b; }
 
-        /* Toast 通知 */
-        .toast-container { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 100; display: flex; flex-direction: column; gap: 10px; }
-        .toast { background: rgba(15, 23, 42, 0.9); border: 1px solid var(--glass-border); color: white; padding: 12px 24px; border-radius: 30px; font-size: 0.95rem; backdrop-filter: blur(10px); animation: slideUp 0.3s ease forwards; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
-        @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
 
-        @media (max-width: 600px) {
-            .input-wrapper { flex-direction: column; }
-            button.primary { padding: 18px; }
-            .container { padding: 30px 20px; width: 95%; }
+        /* 错误提示框样式 */
+        #error-message {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 50;
+            display: none;
+            animation: slideDown 0.3s ease-out;
+        }
+
+        @keyframes slideDown {
+            from { opacity: 0; transform: translate(-50%, -20px); }
+            to { opacity: 1; transform: translate(-50%, 0); }
         }
     </style>
 </head>
 <body>
-    <div class="aurora"></div>
-    <div class="container">
-        <div class="header">
-            <h1>Edge Proxy Engine</h1>
-            <p>输入目标 URL，自动映射高速加密传输链路</p>
-        </div>
 
-        <div class="input-wrapper">
-            <input type="text" id="targetUrl" placeholder="输入网址 (支持快捷键: yt, gg, gh)" autocomplete="off" spellcheck="false" />
-            <button class="primary" id="proxyBtn">启动加速</button>
-        </div>
-
-        <div class="history-panel">
-            <div class="history-header">
-                <h3>最近访问</h3>
-                <button class="clear-btn" id="clearHistoryBtn">清除记录</button>
+    <!-- 顶部导航和输入区域 -->
+    <nav class="navbar px-4 py-3 flex items-center justify-between sm:px-6 lg:px-8">
+        <!-- Logo 和标题 -->
+        <div class="flex items-center space-x-2 mr-4">
+            <div class="bg-blue-600 text-white p-2 rounded-lg shadow-sm">
+                <i class="fa-solid fa-globe text-xl"></i>
             </div>
-            <ul class="history-list" id="historyList">
-                <!-- 历史记录动态渲染 -->
-            </ul>
+            <span class="text-xl font-bold text-gray-800 hidden sm:block">ProxyBrowser</span>
+        </div>
+
+        <!-- URL 输入框表单 -->
+        <form id="url-form" class="flex-grow max-w-3xl flex items-center">
+            <div class="input-container flex w-full bg-gray-100 rounded-full overflow-hidden border border-gray-300">
+                <!-- 协议选择下拉框 (简化起见，我们默认加上 https，用户可以输入完整的) -->
+                <div class="flex items-center pl-4 pr-2 text-gray-500">
+                    <i class="fa-solid fa-link"></i>
+                </div>
+                
+                <input 
+                    type="text" 
+                    id="url-input" 
+                    class="w-full bg-transparent px-2 py-2.5 outline-none text-gray-700 placeholder-gray-400" 
+                    placeholder="输入网址，例如: google.com 或 https://example.com"
+                    autocomplete="off"
+                >
+                
+                <!-- 清除按钮 -->
+                <button type="button" id="clear-btn" class="px-3 text-gray-400 hover:text-gray-600 focus:outline-none hidden">
+                    <i class="fa-solid fa-times-circle"></i>
+                </button>
+                
+                <!-- 访问按钮 -->
+                <button 
+                    type="submit" 
+                    class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 font-medium transition-colors focus:outline-none"
+                >
+                    访问
+                </button>
+            </div>
+        </form>
+
+        <!-- 右侧工具栏 (可选功能) -->
+        <div class="ml-4 flex items-center space-x-3 hidden md:flex">
+             <button id="refresh-btn" class="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors" title="刷新">
+                <i class="fa-solid fa-rotate-right"></i>
+            </button>
+             <button class="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors" title="关于">
+                <i class="fa-solid fa-circle-info"></i>
+            </button>
+        </div>
+    </nav>
+
+    <!-- 错误提示区域 -->
+    <div id="error-message" class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded shadow-md" role="alert">
+        <div class="flex">
+            <div class="py-1"><svg class="fill-current h-6 w-6 text-red-500 mr-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M2.93 17.07A10 10 0 1 1 17.07 2.93 10 10 0 0 1 2.93 17.07zm12.73-1.41A8 8 0 1 0 4.34 4.34a8 8 0 0 0 11.32 11.32zM9 11V9h2v6H9v-4zm0-6h2v2H9V5z"/></svg></div>
+            <div>
+                <p class="font-bold" id="error-title">错误</p>
+                <p class="text-sm" id="error-text">无法加载该页面。</p>
+            </div>
+            <button type="button" class="ml-auto -mx-1.5 -my-1.5 bg-red-100 text-red-500 rounded-lg focus:ring-2 focus:ring-red-400 p-1.5 hover:bg-red-200 inline-flex h-8 w-8" onclick="hideError()">
+                <span class="sr-only">关闭</span>
+                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"></path></svg>
+            </button>
         </div>
     </div>
-    
-    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- 代理内容显示区域 -->
+    <main class="proxy-container">
+        <!-- 欢迎/提示界面 -->
+        <div id="welcome-screen" class="welcome-screen">
+            <div class="text-blue-500 mb-6">
+                <i class="fa-solid fa-shield-halved text-6xl opacity-80"></i>
+            </div>
+            <h2 class="text-3xl font-bold text-gray-800 mb-4">Web 代理浏览器</h2>
+            <p class="text-gray-500 max-w-md text-center mb-8">
+                在上方输入任何网址，即可在这个安全、隐蔽的环境中进行浏览。<br>
+                所有请求将通过代理转发，目标网站不会直接看到您的真实来源。
+            </p>
+            <div class="flex space-x-4 text-sm text-gray-400">
+                <div class="flex items-center"><i class="fa-solid fa-check text-green-500 mr-2"></i>绕过限制</div>
+                <div class="flex items-center"><i class="fa-solid fa-check text-green-500 mr-2"></i>保持域名</div>
+                <div class="flex items-center"><i class="fa-solid fa-check text-green-500 mr-2"></i>纯前端实现</div>
+            </div>
+        </div>
+
+        <!-- 加载动画 -->
+        <div id="loader" class="loader"></div>
+
+        <!-- 用于显示目标网站的 iframe -->
+        <iframe id="proxy-frame" sandbox="allow-same-origin allow-scripts allow-forms allow-popups" title="Proxy Content"></iframe>
+    </main>
 
     <script>
-        const inputEl = document.getElementById('targetUrl');
-        const btnEl = document.getElementById('proxyBtn');
-        const historyListEl = document.getElementById('historyList');
-        const clearBtn = document.getElementById('clearHistoryBtn');
-        const toastContainer = document.getElementById('toastContainer');
+        // 获取 DOM 元素
+        const form = document.getElementById('url-form');
+        const urlInput = document.getElementById('url-input');
+        const clearBtn = document.getElementById('clear-btn');
+        const refreshBtn = document.getElementById('refresh-btn');
+        const iframe = document.getElementById('proxy-frame');
+        const loader = document.getElementById('loader');
+        const welcomeScreen = document.getElementById('welcome-screen');
+        const errorContainer = document.getElementById('error-message');
+        const errorText = document.getElementById('error-text');
 
-        // 快捷指令映射表
-        const shortcuts = {
-            'yt': 'https://www.youtube.com',
-            'gg': 'https://www.google.com',
-            'gh': 'https://github.com',
-            'tg': 'https://web.telegram.org'
-        };
-
-        // Toast 通知系统
-        const showToast = (message, duration = 3000) => {
-            const toast = document.createElement('div');
-            toast.className = 'toast';
-            toast.textContent = message;
-            toastContainer.appendChild(toast);
-            setTimeout(() => {
-                toast.style.opacity = '0';
-                setTimeout(() => toast.remove(), 300);
-            }, duration);
-        };
-
-        // 历史记录存储管理
-        const StorageManager = {
-            KEY: 'proxy_history_v1',
-            get() {
-                try { return JSON.parse(localStorage.getItem(this.KEY)) || []; } 
-                catch { return []; }
-            },
-            add(url) {
-                let records = this.get().filter(r => r.url !== url);
-                records.unshift({ url, timestamp: Date.now() });
-                if(records.length > 10) records = records.slice(0, 10);
-                localStorage.setItem(this.KEY, JSON.stringify(records));
-                renderHistory();
-            },
-            clear() {
-                localStorage.removeItem(this.KEY);
-                renderHistory();
-                showToast('历史记录已清除');
-            }
-        };
-
-        // 格式化时间
-        const timeAgo = (timestamp) => {
-            const seconds = Math.floor((Date.now() - timestamp) / 1000);
-            if (seconds < 60) return '刚刚';
-            if (seconds < 3600) return `${Math.floor(seconds/60)}分钟前`;
-            if (seconds < 86400) return `${Math.floor(seconds/3600)}小时前`;
-            return `${Math.floor(seconds/86400)}天前`;
-        };
-
-        // 渲染历史列表
-        const renderHistory = () => {
-            const records = StorageManager.get();
-            if (records.length === 0) {
-                historyListEl.innerHTML = '<li class="history-item"><span class="history-url" style="color:#475569;">暂无访问记录</span></li>';
-                return;
-            }
-            historyListEl.innerHTML = records.map(record => `
-                <li class="history-item" data-url="${record.url}">
-                    <span class="history-url">${record.url}</span>
-                    <span class="history-time">${timeAgo(record.timestamp)}</span>
-                </li>
-            `).join('');
-        };
-
-        // 智能路由处理核心
-        const executeProxy = (rawInput) => {
-            let target = rawInput.trim();
-            
-            // 处理快捷指令
-            if (shortcuts[target.toLowerCase()]) {
-                target = shortcuts[target.toLowerCase()];
-                showToast(`已展开快捷指令: ${target}`);
-            }
-
-            if (!target) return showToast('请求拦截：URL 不能为空');
-
-            // 智能协议补全
-            if (!/^https?:\/\//i.test(target)) {
-                target = 'https://' + target;
-            }
-
-            try {
-                const parsedUrl = new URL(target);
-                const protocol = parsedUrl.protocol.replace(':', ''); // 'https' or 'http'
-                const endpoint = parsedUrl.hostname + parsedUrl.pathname + parsedUrl.search + parsedUrl.hash;
-                
-                StorageManager.add(target);
-                const proxyUrl = `${window.location.origin}/${protocol}/${endpoint}`;
-                
-                showToast('正在构建加密隧道...');
-                setTimeout(() => { window.location.href = proxyUrl; }, 400);
-
-            } catch (e) {
-                showToast('URL 解析失败，请检查格式');
-            }
-        };
-
-        // 事件监听绑定
-        btnEl.addEventListener('click', () => executeProxy(inputEl.value));
+        // 当前正在代理的 URL
+        let currentUrl = '';
         
-        inputEl.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') executeProxy(inputEl.value);
-        });
+        // 使用公开的 CORS 代理服务
+        // 备选: 'https://api.allorigins.win/raw?url='
+        // 备选: 'https://cors-anywhere.herokuapp.com/' (通常需要申请权限)
+        // 备选: 'https://thingproxy.freeboard.io/fetch/'
+        const CORS_PROXY = 'https://corsproxy.io/?';
 
-        historyListEl.addEventListener('click', (e) => {
-            const item = e.target.closest('.history-item');
-            if (item && item.dataset.url) {
-                inputEl.value = item.dataset.url;
-                executeProxy(item.dataset.url);
+        // 监听输入框变化，控制清除按钮显示/隐藏
+        urlInput.addEventListener('input', () => {
+            if (urlInput.value.length > 0) {
+                clearBtn.classList.remove('hidden');
+            } else {
+                clearBtn.classList.add('hidden');
             }
         });
 
-        clearBtn.addEventListener('click', () => StorageManager.clear());
+        // 清除按钮点击事件
+        clearBtn.addEventListener('click', () => {
+            urlInput.value = '';
+            clearBtn.classList.add('hidden');
+            urlInput.focus();
+        });
 
-        // 初始化
-        renderHistory();
-        inputEl.focus();
+        // 表单提交事件 (核心入口)
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            let url = urlInput.value.trim();
+            
+            if (!url) return;
+
+            // 智能补全协议
+            if (!/^https?:\/\//i.test(url)) {
+                // 默认使用 https
+                url = 'https://' + url;
+                urlInput.value = url;
+            }
+
+            loadUrl(url);
+        });
+
+        // 刷新按钮
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', () => {
+                if (currentUrl) {
+                    loadUrl(currentUrl);
+                }
+            });
+        }
+
+        // 隐藏错误提示
+        function hideError() {
+            errorContainer.style.display = 'none';
+        }
+
+        // 显示错误提示
+        function showError(message) {
+            errorText.textContent = message;
+            errorContainer.style.display = 'block';
+            hideLoading();
+            
+            // 自动隐藏
+            setTimeout(() => {
+                hideError();
+            }, 5000);
+        }
+
+        // 显示加载动画
+        function showLoading() {
+            welcomeScreen.style.display = 'none';
+            iframe.style.display = 'none';
+            loader.style.display = 'block';
+            hideError();
+        }
+
+        // 隐藏加载动画
+        function hideLoading() {
+            loader.style.display = 'none';
+        }
+
+        /**
+         * 加载目标 URL
+         * @param {string} targetUrl 目标网址
+         */
+        async function loadUrl(targetUrl) {
+            showLoading();
+            currentUrl = targetUrl;
+            
+            try {
+                // 构建通过 CORS 代理请求的 URL
+                const proxyUrl = CORS_PROXY + encodeURIComponent(targetUrl);
+                
+                // 发起请求获取 HTML 内容
+                const response = await fetch(proxyUrl);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const htmlContent = await response.text();
+                
+                // 解析基础 URL，用于后续重写相对路径
+                const baseUrl = new URL(targetUrl);
+                
+                // 核心：处理获取到的 HTML，重写其中的链接和资源路径
+                const processedHtml = processHtml(htmlContent, baseUrl);
+                
+                // 将处理后的内容注入到 iframe 中
+                renderInIframe(processedHtml);
+                
+            } catch (error) {
+                console.error("代理加载失败:", error);
+                showError("无法加载页面，可能是目标网站拒绝连接或跨域代理服务不稳定。请稍后再试或更换网址。");
+                
+                // 如果代理失败，作为最后的退路，尝试直接将 iframe src 设置为目标网址
+                // 注意：由于 X-Frame-Options 等策略，这通常也会失败，但作为一种降级手段
+                fallbackToDirectIframe(targetUrl);
+            }
+        }
+
+        /**
+         * 处理 HTML 内容：重写所有的 URL，使它们都经过我们的代理
+         * 这是一个非常复杂的过程，纯前端实现无法做到 100% 完美，但能处理大部分情况
+         */
+        function processHtml(html, baseUrl) {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            
+            // 1. 注入一个 base 标签，解决部分相对路径问题 (指向通过代理的原始基址)
+            const baseTag = doc.createElement('base');
+            // 我们不能直接设置为原网站的 base，因为我们希望请求被拦截
+            // baseTag.href = baseUrl.href; 
+            // doc.head.prepend(baseTag);
+
+            // 辅助函数：重写绝对或相对 URL 为通过代理的 URL
+            const rewriteUrl = (urlStr) => {
+                if (!urlStr || urlStr.startsWith('data:') || urlStr.startsWith('javascript:') || urlStr.startsWith('#')) {
+                    return urlStr;
+                }
+                
+                try {
+                    // 将相对路径解析为绝对路径
+                    const absoluteUrl = new URL(urlStr, baseUrl.href).href;
+                    // 返回通过代理的 URL
+                    return CORS_PROXY + encodeURIComponent(absoluteUrl);
+                } catch (e) {
+                    return urlStr;
+                }
+            };
+
+            // 2. 重写所有的 <a> 标签链接 (拦截点击，保持在代理内)
+            // 我们不直接重写 href，而是通过注入脚本拦截点击事件，以保持地址栏 URL 的美观
+            const links = doc.querySelectorAll('a[href]');
+            links.forEach(a => {
+                const originalHref = a.getAttribute('href');
+                if (originalHref && !originalHref.startsWith('javascript:') && !originalHref.startsWith('#')) {
+                     try {
+                        const absoluteTargetUrl = new URL(originalHref, baseUrl.href).href;
+                        // 将目标真实 URL 存入 data 属性
+                        a.setAttribute('data-proxy-target', absoluteTargetUrl);
+                        // 修改 href 为无效路径，防止默认跳转跳出当前域
+                        a.setAttribute('href', 'javascript:void(0);');
+                     } catch(e) {}
+                }
+            });
+
+            // 3. 重写静态资源加载路径 (img, link, script)
+            const elementsWithSrc = doc.querySelectorAll('[src]');
+            elementsWithSrc.forEach(el => {
+                const src = el.getAttribute('src');
+                if (src) el.setAttribute('src', rewriteUrl(src));
+            });
+
+            const elementsWithHref = doc.querySelectorAll('link[href]');
+            elementsWithHref.forEach(el => {
+                const href = el.getAttribute('href');
+                if (href) el.setAttribute('href', rewriteUrl(href));
+            });
+
+            // 4. 重写内联样式中的 url()
+            const elementsWithStyle = doc.querySelectorAll('[style]');
+            elementsWithStyle.forEach(el => {
+                let style = el.getAttribute('style');
+                if (style && style.includes('url(')) {
+                    style = style.replace(/url\((['"]?)(.*?)\1\)/g, (match, quote, url) => {
+                        return `url(${quote || ''}${rewriteUrl(url)}${quote || ''})`;
+                    });
+                    el.setAttribute('style', style);
+                }
+            });
+
+            // 5. 注入拦截脚本到被代理的页面中
+            const injectionScript = doc.createElement('script');
+            injectionScript.textContent = `
+                // 拦截 a 标签点击
+                document.addEventListener('click', function(e) {
+                    // 寻找被点击的 a 标签
+                    let target = e.target;
+                    while (target && target.tagName !== 'A') {
+                        target = target.parentNode;
+                    }
+                    
+                    if (target && target.tagName === 'A') {
+                        const proxyTarget = target.getAttribute('data-proxy-target');
+                        if (proxyTarget) {
+                            e.preventDefault();
+                            // 通知父窗口 (我们的主控页面) 加载新 URL
+                            window.parent.postMessage({ type: 'navigate', url: proxyTarget }, '*');
+                        }
+                    }
+                }, true);
+
+                // 拦截表单提交 (简化版，仅处理 GET)
+                document.addEventListener('submit', function(e) {
+                    const form = e.target;
+                    if(form.method.toLowerCase() === 'get') {
+                        e.preventDefault();
+                        const formData = new FormData(form);
+                        const params = new URLSearchParams(formData);
+                        const actionUrl = new URL(form.action || window.location.href, '${baseUrl.href}');
+                        actionUrl.search = params.toString();
+                        
+                        window.parent.postMessage({ type: 'navigate', url: actionUrl.href }, '*');
+                    }
+                });
+                
+                // 修复 History API，防止页面改变 URL
+                const _pushState = history.pushState;
+                history.pushState = function(state, title, url) {
+                    // 可以在这里拦截路由变化
+                    return _pushState.apply(history, arguments);
+                };
+            `;
+            doc.head.appendChild(injectionScript);
+
+            // 序列化回 HTML 字符串
+            return doc.documentElement.outerHTML;
+        }
+
+        /**
+         * 将 HTML 内容写入 iframe
+         */
+        function renderInIframe(htmlContent) {
+            // 获取 iframe 的 document
+            const iframeDoc = iframe.contentWindow.document;
+            
+            // 写入内容
+            iframeDoc.open();
+            iframeDoc.write(htmlContent);
+            iframeDoc.close();
+            
+            // 监听 iframe 内容加载完成
+            iframe.onload = () => {
+                hideLoading();
+                iframe.style.display = 'block';
+                // 更新顶部地址栏显示
+                urlInput.value = currentUrl;
+            };
+            
+            // 如果 iframe 没有触发 onload (有时 document.write 后不触发)，手动显示
+            setTimeout(() => {
+                if(loader.style.display !== 'none') {
+                    hideLoading();
+                    iframe.style.display = 'block';
+                    urlInput.value = currentUrl;
+                }
+            }, 1500);
+        }
+
+        /**
+         * 退路：直接使用 iframe src (经常会因为 X-Frame-Options 失败)
+         */
+        function fallbackToDirectIframe(url) {
+            console.log("尝试直接使用 iframe 嵌套...");
+            iframe.src = url;
+            
+            iframe.onload = () => {
+                hideLoading();
+                iframe.style.display = 'block';
+            };
+            
+            // 设置超时，如果一直不加载说明被墙或被限制
+            setTimeout(() => {
+                if(loader.style.display !== 'none') {
+                    showError("加载失败。目标网站启用了安全策略 (如 X-Frame-Options) 阻止了被嵌套显示。");
+                }
+            }, 5000);
+        }
+
+        // 监听来自 iframe 内部注入脚本的消息
+        window.addEventListener('message', (event) => {
+            // 安全起见，验证消息来源（这里我们自己注入的，所以信任所有）
+            const data = event.data;
+            if (data && data.type === 'navigate' && data.url) {
+                console.log("拦截到页面内跳转:", data.url);
+                // 更新地址栏
+                urlInput.value = data.url;
+                // 触发新的加载流程
+                loadUrl(data.url);
+            }
+        });
+
     </script>
 </body>
 </html>
