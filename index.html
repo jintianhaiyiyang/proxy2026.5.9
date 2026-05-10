@@ -3,525 +3,209 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Web 代理浏览器</title>
-    <!-- 引入 Tailwind CSS 用于快速美化 UI -->
+    <title>Enterprise Proxy Gateway</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- 引入 Font Awesome 图标 -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        /* 引入优雅的字体 */
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #f8fafc; /* 浅色背景 */
-            color: #334155;
-            margin: 0;
-            padding: 0;
-            display: flex;
-            flex-direction: column;
-            height: 100vh;
-            overflow: hidden;
+        .loader-ring { 
+            border-top-color: #4f46e5; 
+            animation: spin 1s linear infinite; 
         }
-
-        /* 顶部导航栏样式 */
-        .navbar {
-            background-color: #ffffff;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-            z-index: 10;
-            transition: all 0.3s ease;
-        }
-
-        /* 输入框容器样式，添加发光效果 */
-        .input-container {
-            position: relative;
-            transition: all 0.3s ease;
-        }
-        
-        .input-container:focus-within {
-            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.5);
-            border-radius: 9999px;
-        }
-
-        /* iframe 容器样式，占据剩余空间 */
-        .proxy-container {
-            flex-grow: 1;
-            position: relative;
-            background-color: #f1f5f9;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            overflow: hidden;
-        }
-
-        /* iframe 样式，默认隐藏，加载完成后显示 */
-        #proxy-frame {
-            width: 100%;
-            height: 100%;
-            border: none;
-            display: none; /* 初始隐藏 */
-            background-color: white;
-        }
-
-        /* 加载动画样式 */
-        .loader {
-            border: 4px solid #e2e8f0;
-            border-top: 4px solid #3b82f6;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            display: none; /* 初始隐藏 */
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        /* 欢迎界面样式 */
-        .welcome-screen {
-            text-align: center;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            padding: 2rem;
-            animation: fadeIn 0.5s ease-out;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        /* 错误提示框样式 */
-        #error-message {
-            position: absolute;
-            top: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            z-index: 50;
-            display: none;
-            animation: slideDown 0.3s ease-out;
-        }
-
-        @keyframes slideDown {
-            from { opacity: 0; transform: translate(-50%, -20px); }
-            to { opacity: 1; transform: translate(-50%, 0); }
-        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
-<body>
-
-    <!-- 顶部导航和输入区域 -->
-    <nav class="navbar px-4 py-3 flex items-center justify-between sm:px-6 lg:px-8">
-        <!-- Logo 和标题 -->
-        <div class="flex items-center space-x-2 mr-4">
-            <div class="bg-blue-600 text-white p-2 rounded-lg shadow-sm">
-                <i class="fa-solid fa-globe text-xl"></i>
-            </div>
-            <span class="text-xl font-bold text-gray-800 hidden sm:block">ProxyBrowser</span>
+<body class="bg-gray-100 flex flex-col h-screen overflow-hidden text-gray-800 antialiased">
+    
+    <header class="bg-white shadow border-b border-gray-200 p-3 flex items-center justify-between z-10 shrink-0">
+        <div class="flex items-center gap-2 text-indigo-600 font-black text-xl tracking-tight">
+            <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"></path></svg>
+            OmniProxy
         </div>
-
-        <!-- URL 输入框表单 -->
-        <form id="url-form" class="flex-grow max-w-3xl flex items-center">
-            <div class="input-container flex w-full bg-gray-100 rounded-full overflow-hidden border border-gray-300">
-                <!-- 协议选择下拉框 (简化起见，我们默认加上 https，用户可以输入完整的) -->
-                <div class="flex items-center pl-4 pr-2 text-gray-500">
-                    <i class="fa-solid fa-link"></i>
-                </div>
-                
-                <input 
-                    type="text" 
-                    id="url-input" 
-                    class="w-full bg-transparent px-2 py-2.5 outline-none text-gray-700 placeholder-gray-400" 
-                    placeholder="输入网址，例如: google.com 或 https://example.com"
-                    autocomplete="off"
-                >
-                
-                <!-- 清除按钮 -->
-                <button type="button" id="clear-btn" class="px-3 text-gray-400 hover:text-gray-600 focus:outline-none hidden">
-                    <i class="fa-solid fa-times-circle"></i>
-                </button>
-                
-                <!-- 访问按钮 -->
-                <button 
-                    type="submit" 
-                    class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 font-medium transition-colors focus:outline-none"
-                >
-                    访问
-                </button>
-            </div>
+        <form id="proxy-form" class="flex-1 max-w-4xl mx-6 relative">
+            <input id="url-input" type="url" required placeholder="输入目标网址 (例如: https://news.ycombinator.com)" class="w-full pl-5 pr-28 py-2.5 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all shadow-inner text-sm bg-gray-50 hover:bg-white" />
+            <button type="submit" class="absolute right-1 top-1 bottom-1 px-6 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md font-semibold text-sm transition-colors shadow-sm">
+                安全访问
+            </button>
         </form>
-
-        <!-- 右侧工具栏 (可选功能) -->
-        <div class="ml-4 flex items-center space-x-3 hidden md:flex">
-             <button id="refresh-btn" class="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors" title="刷新">
-                <i class="fa-solid fa-rotate-right"></i>
-            </button>
-             <button class="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors" title="关于">
-                <i class="fa-solid fa-circle-info"></i>
-            </button>
+        <div class="flex items-center gap-3">
+            <span id="status-badge" class="px-3 py-1 rounded-md bg-gray-100 border border-gray-200 text-xs font-bold text-gray-500 uppercase tracking-wide">IDLE</span>
         </div>
-    </nav>
+    </header>
 
-    <!-- 错误提示区域 -->
-    <div id="error-message" class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded shadow-md" role="alert">
-        <div class="flex">
-            <div class="py-1"><svg class="fill-current h-6 w-6 text-red-500 mr-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M2.93 17.07A10 10 0 1 1 17.07 2.93 10 10 0 0 1 2.93 17.07zm12.73-1.41A8 8 0 1 0 4.34 4.34a8 8 0 0 0 11.32 11.32zM9 11V9h2v6H9v-4zm0-6h2v2H9V5z"/></svg></div>
-            <div>
-                <p class="font-bold" id="error-title">错误</p>
-                <p class="text-sm" id="error-text">无法加载该页面。</p>
-            </div>
-            <button type="button" class="ml-auto -mx-1.5 -my-1.5 bg-red-100 text-red-500 rounded-lg focus:ring-2 focus:ring-red-400 p-1.5 hover:bg-red-200 inline-flex h-8 w-8" onclick="hideError()">
-                <span class="sr-only">关闭</span>
-                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"></path></svg>
-            </button>
-        </div>
-    </div>
-
-    <!-- 代理内容显示区域 -->
-    <main class="proxy-container">
-        <!-- 欢迎/提示界面 -->
-        <div id="welcome-screen" class="welcome-screen">
-            <div class="text-blue-500 mb-6">
-                <i class="fa-solid fa-shield-halved text-6xl opacity-80"></i>
-            </div>
-            <h2 class="text-3xl font-bold text-gray-800 mb-4">Web 代理浏览器</h2>
-            <p class="text-gray-500 max-w-md text-center mb-8">
-                在上方输入任何网址，即可在这个安全、隐蔽的环境中进行浏览。<br>
-                所有请求将通过代理转发，目标网站不会直接看到您的真实来源。
-            </p>
-            <div class="flex space-x-4 text-sm text-gray-400">
-                <div class="flex items-center"><i class="fa-solid fa-check text-green-500 mr-2"></i>绕过限制</div>
-                <div class="flex items-center"><i class="fa-solid fa-check text-green-500 mr-2"></i>保持域名</div>
-                <div class="flex items-center"><i class="fa-solid fa-check text-green-500 mr-2"></i>纯前端实现</div>
-            </div>
+    <main class="flex-1 relative bg-white w-full h-full">
+        <div id="loading-overlay" class="hidden absolute inset-0 bg-white/90 backdrop-blur-sm z-20 flex flex-col items-center justify-center">
+            <div class="loader-ring rounded-full border-4 border-gray-200 h-14 w-14 mb-4"></div>
+            <p class="text-gray-700 font-semibold tracking-wide">正在解析目标域及重写网络链路...</p>
         </div>
 
-        <!-- 加载动画 -->
-        <div id="loader" class="loader"></div>
+        <div id="error-panel" class="hidden absolute inset-0 z-20 bg-gray-50 flex flex-col items-center justify-center p-8 text-center">
+            <div class="bg-red-100 p-4 rounded-full mb-4">
+                <svg class="w-12 h-12 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+            </div>
+            <h3 class="text-2xl font-black text-gray-900 mb-2">链路阻断</h3>
+            <p id="error-message" class="text-gray-600 max-w-lg mx-auto mb-6 text-sm">由于目标站点的安全策略或代理节点阻断，请求未能完成。</p>
+            <button onclick="document.getElementById('error-panel').classList.add('hidden')" class="px-8 py-2.5 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-medium transition-colors">关闭面板</button>
+        </div>
 
-        <!-- 用于显示目标网站的 iframe -->
-        <iframe id="proxy-frame" sandbox="allow-same-origin allow-scripts allow-forms allow-popups" title="Proxy Content"></iframe>
+        <iframe id="proxy-frame" class="w-full h-full border-0" sandbox="allow-same-origin allow-scripts allow-forms allow-popups"></iframe>
     </main>
 
     <script>
-        // 获取 DOM 元素
-        const form = document.getElementById('url-form');
-        const urlInput = document.getElementById('url-input');
-        const clearBtn = document.getElementById('clear-btn');
-        const refreshBtn = document.getElementById('refresh-btn');
-        const iframe = document.getElementById('proxy-frame');
-        const loader = document.getElementById('loader');
-        const welcomeScreen = document.getElementById('welcome-screen');
-        const errorContainer = document.getElementById('error-message');
-        const errorText = document.getElementById('error-text');
-
-        // 当前正在代理的 URL
-        let currentUrl = '';
-        
-        // 使用公开的 CORS 代理服务
-        // 备选: 'https://api.allorigins.win/raw?url='
-        // 备选: 'https://cors-anywhere.herokuapp.com/' (通常需要申请权限)
-        // 备选: 'https://thingproxy.freeboard.io/fetch/'
-        const CORS_PROXY = 'https://corsproxy.io/?';
-
-        // 监听输入框变化，控制清除按钮显示/隐藏
-        urlInput.addEventListener('input', () => {
-            if (urlInput.value.length > 0) {
-                clearBtn.classList.remove('hidden');
-            } else {
-                clearBtn.classList.add('hidden');
-            }
-        });
-
-        // 清除按钮点击事件
-        clearBtn.addEventListener('click', () => {
-            urlInput.value = '';
-            clearBtn.classList.add('hidden');
-            urlInput.focus();
-        });
-
-        // 表单提交事件 (核心入口)
-        form.addEventListener('submit', (e) => {
-            e.preventDefault();
-            let url = urlInput.value.trim();
-            
-            if (!url) return;
-
-            // 智能补全协议
-            if (!/^https?:\/\//i.test(url)) {
-                // 默认使用 https
-                url = 'https://' + url;
-                urlInput.value = url;
-            }
-
-            loadUrl(url);
-        });
-
-        // 刷新按钮
-        if (refreshBtn) {
-            refreshBtn.addEventListener('click', () => {
-                if (currentUrl) {
-                    loadUrl(currentUrl);
-                }
-            });
-        }
-
-        // 隐藏错误提示
-        function hideError() {
-            errorContainer.style.display = 'none';
-        }
-
-        // 显示错误提示
-        function showError(message) {
-            errorText.textContent = message;
-            errorContainer.style.display = 'block';
-            hideLoading();
-            
-            // 自动隐藏
-            setTimeout(() => {
-                hideError();
-            }, 5000);
-        }
-
-        // 显示加载动画
-        function showLoading() {
-            welcomeScreen.style.display = 'none';
-            iframe.style.display = 'none';
-            loader.style.display = 'block';
-            hideError();
-        }
-
-        // 隐藏加载动画
-        function hideLoading() {
-            loader.style.display = 'none';
-        }
-
         /**
-         * 加载目标 URL
-         * @param {string} targetUrl 目标网址
+         * 生产级前端代理控制器 (Production Proxy Controller)
+         * 基于 SOLID 原则设计，分离 UI 状态、网络调度与 DOM 解析逻辑。
          */
-        async function loadUrl(targetUrl) {
-            showLoading();
-            currentUrl = targetUrl;
-            
-            try {
-                // 构建通过 CORS 代理请求的 URL
-                const proxyUrl = CORS_PROXY + encodeURIComponent(targetUrl);
+        class ProxyEngine {
+            constructor() {
+                this.elements = {
+                    form: document.getElementById('proxy-form'),
+                    input: document.getElementById('url-input'),
+                    frame: document.getElementById('proxy-frame'),
+                    loader: document.getElementById('loading-overlay'),
+                    errorPanel: document.getElementById('error-panel'),
+                    errorMsg: document.getElementById('error-message'),
+                    statusBadge: document.getElementById('status-badge')
+                };
                 
-                // 发起请求获取 HTML 内容
-                const response = await fetch(proxyUrl);
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                
-                const htmlContent = await response.text();
-                
-                // 解析基础 URL，用于后续重写相对路径
-                const baseUrl = new URL(targetUrl);
-                
-                // 核心：处理获取到的 HTML，重写其中的链接和资源路径
-                const processedHtml = processHtml(htmlContent, baseUrl);
-                
-                // 将处理后的内容注入到 iframe 中
-                renderInIframe(processedHtml);
-                
-            } catch (error) {
-                console.error("代理加载失败:", error);
-                showError("无法加载页面，可能是目标网站拒绝连接或跨域代理服务不稳定。请稍后再试或更换网址。");
-                
-                // 如果代理失败，作为最后的退路，尝试直接将 iframe src 设置为目标网址
-                // 注意：由于 X-Frame-Options 等策略，这通常也会失败，但作为一种降级手段
-                fallbackToDirectIframe(targetUrl);
+                // CORS 代理节点集群 (具备降级与容灾机制)
+                this.proxyNodes = [
+                    (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+                    (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
+                ];
+
+                this._initEventListeners();
             }
-        }
 
-        /**
-         * 处理 HTML 内容：重写所有的 URL，使它们都经过我们的代理
-         * 这是一个非常复杂的过程，纯前端实现无法做到 100% 完美，但能处理大部分情况
-         */
-        function processHtml(html, baseUrl) {
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(html, 'text/html');
-            
-            // 1. 注入一个 base 标签，解决部分相对路径问题 (指向通过代理的原始基址)
-            const baseTag = doc.createElement('base');
-            // 我们不能直接设置为原网站的 base，因为我们希望请求被拦截
-            // baseTag.href = baseUrl.href; 
-            // doc.head.prepend(baseTag);
-
-            // 辅助函数：重写绝对或相对 URL 为通过代理的 URL
-            const rewriteUrl = (urlStr) => {
-                if (!urlStr || urlStr.startsWith('data:') || urlStr.startsWith('javascript:') || urlStr.startsWith('#')) {
-                    return urlStr;
-                }
-                
-                try {
-                    // 将相对路径解析为绝对路径
-                    const absoluteUrl = new URL(urlStr, baseUrl.href).href;
-                    // 返回通过代理的 URL
-                    return CORS_PROXY + encodeURIComponent(absoluteUrl);
-                } catch (e) {
-                    return urlStr;
-                }
-            };
-
-            // 2. 重写所有的 <a> 标签链接 (拦截点击，保持在代理内)
-            // 我们不直接重写 href，而是通过注入脚本拦截点击事件，以保持地址栏 URL 的美观
-            const links = doc.querySelectorAll('a[href]');
-            links.forEach(a => {
-                const originalHref = a.getAttribute('href');
-                if (originalHref && !originalHref.startsWith('javascript:') && !originalHref.startsWith('#')) {
-                     try {
-                        const absoluteTargetUrl = new URL(originalHref, baseUrl.href).href;
-                        // 将目标真实 URL 存入 data 属性
-                        a.setAttribute('data-proxy-target', absoluteTargetUrl);
-                        // 修改 href 为无效路径，防止默认跳转跳出当前域
-                        a.setAttribute('href', 'javascript:void(0);');
-                     } catch(e) {}
-                }
-            });
-
-            // 3. 重写静态资源加载路径 (img, link, script)
-            const elementsWithSrc = doc.querySelectorAll('[src]');
-            elementsWithSrc.forEach(el => {
-                const src = el.getAttribute('src');
-                if (src) el.setAttribute('src', rewriteUrl(src));
-            });
-
-            const elementsWithHref = doc.querySelectorAll('link[href]');
-            elementsWithHref.forEach(el => {
-                const href = el.getAttribute('href');
-                if (href) el.setAttribute('href', rewriteUrl(href));
-            });
-
-            // 4. 重写内联样式中的 url()
-            const elementsWithStyle = doc.querySelectorAll('[style]');
-            elementsWithStyle.forEach(el => {
-                let style = el.getAttribute('style');
-                if (style && style.includes('url(')) {
-                    style = style.replace(/url\((['"]?)(.*?)\1\)/g, (match, quote, url) => {
-                        return `url(${quote || ''}${rewriteUrl(url)}${quote || ''})`;
-                    });
-                    el.setAttribute('style', style);
-                }
-            });
-
-            // 5. 注入拦截脚本到被代理的页面中
-            const injectionScript = doc.createElement('script');
-            injectionScript.textContent = `
-                // 拦截 a 标签点击
-                document.addEventListener('click', function(e) {
-                    // 寻找被点击的 a 标签
-                    let target = e.target;
-                    while (target && target.tagName !== 'A') {
-                        target = target.parentNode;
+            _initEventListeners() {
+                // 主表单提交拦截
+                this.elements.form.addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    let targetUrl = this.elements.input.value.trim();
+                    if (!targetUrl.startsWith('http')) {
+                        targetUrl = 'https://' + targetUrl;
+                        this.elements.input.value = targetUrl;
                     }
-                    
-                    if (target && target.tagName === 'A') {
-                        const proxyTarget = target.getAttribute('data-proxy-target');
-                        if (proxyTarget) {
-                            e.preventDefault();
-                            // 通知父窗口 (我们的主控页面) 加载新 URL
-                            window.parent.postMessage({ type: 'navigate', url: proxyTarget }, '*');
-                        }
-                    }
-                }, true);
+                    this.execute(targetUrl);
+                });
 
-                // 拦截表单提交 (简化版，仅处理 GET)
-                document.addEventListener('submit', function(e) {
-                    const form = e.target;
-                    if(form.method.toLowerCase() === 'get') {
-                        e.preventDefault();
-                        const formData = new FormData(form);
-                        const params = new URLSearchParams(formData);
-                        const actionUrl = new URL(form.action || window.location.href, '${baseUrl.href}');
-                        actionUrl.search = params.toString();
-                        
-                        window.parent.postMessage({ type: 'navigate', url: actionUrl.href }, '*');
+                // 监听子 iframe 回传的路由事件，实现代理域内的闭环流转
+                window.addEventListener('message', (event) => {
+                    if (event.data && event.data.type === 'PROXY_ROUTING') {
+                        this.elements.input.value = event.data.url;
+                        this.execute(event.data.url);
                     }
                 });
-                
-                // 修复 History API，防止页面改变 URL
-                const _pushState = history.pushState;
-                history.pushState = function(state, title, url) {
-                    // 可以在这里拦截路由变化
-                    return _pushState.apply(history, arguments);
-                };
-            `;
-            doc.head.appendChild(injectionScript);
-
-            // 序列化回 HTML 字符串
-            return doc.documentElement.outerHTML;
-        }
-
-        /**
-         * 将 HTML 内容写入 iframe
-         */
-        function renderInIframe(htmlContent) {
-            // 获取 iframe 的 document
-            const iframeDoc = iframe.contentWindow.document;
-            
-            // 写入内容
-            iframeDoc.open();
-            iframeDoc.write(htmlContent);
-            iframeDoc.close();
-            
-            // 监听 iframe 内容加载完成
-            iframe.onload = () => {
-                hideLoading();
-                iframe.style.display = 'block';
-                // 更新顶部地址栏显示
-                urlInput.value = currentUrl;
-            };
-            
-            // 如果 iframe 没有触发 onload (有时 document.write 后不触发)，手动显示
-            setTimeout(() => {
-                if(loader.style.display !== 'none') {
-                    hideLoading();
-                    iframe.style.display = 'block';
-                    urlInput.value = currentUrl;
-                }
-            }, 1500);
-        }
-
-        /**
-         * 退路：直接使用 iframe src (经常会因为 X-Frame-Options 失败)
-         */
-        function fallbackToDirectIframe(url) {
-            console.log("尝试直接使用 iframe 嵌套...");
-            iframe.src = url;
-            
-            iframe.onload = () => {
-                hideLoading();
-                iframe.style.display = 'block';
-            };
-            
-            // 设置超时，如果一直不加载说明被墙或被限制
-            setTimeout(() => {
-                if(loader.style.display !== 'none') {
-                    showError("加载失败。目标网站启用了安全策略 (如 X-Frame-Options) 阻止了被嵌套显示。");
-                }
-            }, 5000);
-        }
-
-        // 监听来自 iframe 内部注入脚本的消息
-        window.addEventListener('message', (event) => {
-            // 安全起见，验证消息来源（这里我们自己注入的，所以信任所有）
-            const data = event.data;
-            if (data && data.type === 'navigate' && data.url) {
-                console.log("拦截到页面内跳转:", data.url);
-                // 更新地址栏
-                urlInput.value = data.url;
-                // 触发新的加载流程
-                loadUrl(data.url);
             }
-        });
 
+            _updateStatus(state, type) {
+                const badge = this.elements.statusBadge;
+                badge.textContent = state;
+                const baseClass = 'px-3 py-1 rounded-md text-xs font-bold uppercase tracking-wide border';
+                const typeClasses = {
+                    info: 'bg-indigo-50 border-indigo-200 text-indigo-700',
+                    success: 'bg-emerald-50 border-emerald-200 text-emerald-700',
+                    error: 'bg-rose-50 border-rose-200 text-rose-700'
+                };
+                badge.className = `${baseClass} ${typeClasses[type] || typeClasses.info}`;
+            }
+
+            /**
+             * 执行核心网络请求与故障转移调度
+             */
+            async execute(url) {
+                this.elements.loader.classList.remove('hidden');
+                this.elements.errorPanel.classList.add('hidden');
+                this._updateStatus('Routing...', 'info');
+
+                let htmlPayload = null;
+                let lastError = '';
+
+                // 轮询代理节点，防御单点故障
+                for (let i = 0; i < this.proxyNodes.length; i++) {
+                    const endpoint = this.proxyNodes[i](url);
+                    try {
+                        const response = await fetch(endpoint, {
+                            method: 'GET',
+                            headers: { 'Accept': 'text/html,application/xhtml+xml' },
+                            signal: AbortSignal.timeout(15000) // 15秒超时控制，防止僵死
+                        });
+                        
+                        if (response.ok) {
+                            htmlPayload = await response.text();
+                            break; 
+                        } else {
+                            lastError = `Node ${i + 1} 返回状态码 HTTP ${response.status}`;
+                        }
+                    } catch (error) {
+                        lastError = `Node ${i + 1} 网络链路断开`;
+                    }
+                }
+
+                if (htmlPayload) {
+                    this._processAndInjectDOM(htmlPayload, url);
+                } else {
+                    this._triggerError(`链路彻底阻断。详细信息: ${lastError}。请检查目标站点的反爬虫与跨域安全策略。`);
+                }
+            }
+
+            /**
+             * 深度解析与重写内存中的 DOM 树，切断恶意跳出并修正资源定位
+             */
+            _processAndInjectDOM(rawHtml, baseUrl) {
+                try {
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(rawHtml, 'text/html');
+
+                    // 1. 强制注入 Base href，修正子页面内所有相对路径 (图片/CSS/JS)
+                    let baseEl = doc.querySelector('base');
+                    if (!baseEl) {
+                        baseEl = doc.createElement('base');
+                        doc.head.insertBefore(baseEl, doc.head.firstChild);
+                    }
+                    baseEl.href = baseUrl;
+
+                    // 2. 注入全局劫持脚本 (Hooking)
+                    const injectionScript = doc.createElement('script');
+                    injectionScript.textContent = `
+                        // 拦截标准导航行为
+                        document.addEventListener('click', function(e) {
+                            const anchor = e.target.closest('a');
+                            if (anchor && anchor.href && !anchor.href.startsWith('javascript:')) {
+                                e.preventDefault();
+                                window.parent.postMessage({ type: 'PROXY_ROUTING', url: anchor.href }, '*');
+                            }
+                        }, true);
+
+                        // 拦截原生表单提交，防止跨域重载导致脱离代理环境
+                        document.addEventListener('submit', function(e) {
+                            e.preventDefault();
+                            console.warn('[OmniProxy] 为维持代理状态，已阻断原生表单提交。');
+                        });
+                    `;
+                    doc.head.appendChild(injectionScript);
+
+                    // 3. 将净化与重写后的 DOM 序列化并推送至 iframe 的源协议中
+                    this.elements.frame.srcdoc = doc.documentElement.outerHTML;
+                    
+                    this._updateStatus('Connected', 'success');
+                    this.elements.loader.classList.add('hidden');
+
+                } catch (error) {
+                    this._triggerError(`DOM 构建与解析阶段发生崩溃: ${error.message}`);
+                }
+            }
+
+            _triggerError(message) {
+                this.elements.loader.classList.add('hidden');
+                this.elements.errorPanel.classList.remove('hidden');
+                this.elements.errorMsg.textContent = message;
+                this._updateStatus('Failed', 'error');
+            }
+        }
+
+        // 启动系统生命周期
+        document.addEventListener('DOMContentLoaded', () => {
+            new ProxyEngine();
+        });
     </script>
 </body>
 </html>
